@@ -1,13 +1,25 @@
-FROM ubuntu:16.04
+#FROM ubuntu:16.04
+
+FROM balenalib/%%BALENA_MACHINE_NAME%%-debian:buster
 
 ARG S6_OVERLAY_VERSION=v1.22.1.0
-ARG S6_OVERLAY_ARCH=amd64
-ARG PLEX_BUILD=linux-x86_64
+ARG S6_OVERLAY_ARCH=aarch64
+ARG PLEX_BUILD=linux-aarch64
 ARG PLEX_DISTRO=debian
 ARG DEBIAN_FRONTEND="noninteractive"
-ENV TERM="xterm" LANG="C.UTF-8" LC_ALL="C.UTF-8"
+ENV TERM="xterm" LANG="C.UTF-8" LC_ALL="C.UTF-8" UDEV=on
 
 ENTRYPOINT ["/init"]
+
+#COPY udev/usb.rules /etc/udev/rules.d/usb.rules
+
+# Install dependencies
+RUN install_packages util-linux grep
+
+WORKDIR /usr/src
+COPY scripts scripts
+RUN chmod +x scripts/*
+
 
 RUN \
 # Update and get dependencies
@@ -17,11 +29,22 @@ RUN \
       curl \
       xmlstarlet \
       uuid-runtime \
-      unrar \
-      beignet-opencl-icd \
-      ocl-icd-libopencl1 \
+      unrar-free \
+      rsync \
+      openssh-client \
+      e2fsprogs \
+      samba \
+      cifs-utils \
+      cryptsetup \
+      exfat-fuse \
+      exfat-utils
     && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
+COPY smb_data_share.conf /tmp/
+RUN cat /tmp/smb_data_share.conf >> /etc/samba/smb.conf
+
+RUN \
 # Fetch and extract S6 overlay
     curl -J -L -o /tmp/s6-overlay-${S6_OVERLAY_ARCH}.tar.gz https://github.com/just-containers/s6-overlay/releases/download/${S6_OVERLAY_VERSION}/s6-overlay-${S6_OVERLAY_ARCH}.tar.gz && \
     tar xzf /tmp/s6-overlay-${S6_OVERLAY_ARCH}.tar.gz -C / && \
@@ -45,10 +68,10 @@ RUN \
     rm -rf /var/tmp/*
 
 EXPOSE 32400/tcp 3005/tcp 8324/tcp 32469/tcp 1900/udp 32410/udp 32412/udp 32413/udp 32414/udp
-VOLUME /config /transcode
+#RUN mkdir /data/config /data/transcode
 
 ENV CHANGE_CONFIG_DIR_OWNERSHIP="true" \
-    HOME="/config"
+    HOME="/data/config"
 
 ARG TAG=beta
 ARG URL=
@@ -60,3 +83,6 @@ RUN \
     /installBinary.sh
 
 HEALTHCHECK --interval=5s --timeout=2s --retries=20 CMD /healthcheck.sh || exit 1
+
+# Start app
+ADD scripts/start.sh /start.sh
